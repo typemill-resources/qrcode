@@ -1,0 +1,63 @@
+name: 'QRCode'
+version: '1.1.1'
+author: 'Mark Klein'
+link: 'https://typemill.net'
+license: 'MIT'
+description: 'Generates QR Codes via shortcode [qrcode data="..."]'
+settings:
+  size: 300
+  margin: 10
+  encoding: 'UTF-8'
+  error_correction: 'Low'
+  foreground_color: '#000000'
+  background_color: '#ffffff'
+  logo_path: ''
+  logo_resize: ''
+  label_text: ''
+  label_font_size: 16
+  label_alignment: 'Center'
+  alignment: 'left'
+forms:
+  fields:
+    size:
+      type: 'number'
+      label: 'QR Code Size (px)'
+      placeholder: '300'
+    margin:
+      type: 'number'
+      label: 'Margin (px)'
+      placeholder: '10'
+    alignment:
+      type: 'select'
+      label: 'Alignment'
+      options:
+        left: 'Left'
+        center: 'Center'
+        right: 'Right'
+    error_correction:
+      type: 'select'
+      label: 'Error Correction Level'
+      options:
+        Low: 'Low'
+        Medium: 'Medium'
+        Quartile: 'Quartile'
+        High: 'High'
+    foreground_color:
+      type: 'text'
+      label: 'Foreground Color (Hex)'
+      placeholder: '#000000'
+    background_color:
+      type: 'text'
+      label: 'Background Color (Hex)'
+      placeholder: '#ffffff'
+    logo_path:
+      type: 'text'
+      label: 'Logo Path (internal path, optional)'
+      description: 'E.g. media/files/logo.png'
+    logo_resize:
+      type: 'number'
+      label: 'Logo Width (px, optional)'
+    label_font_size:
+      type: 'number'
+      label: 'Label Font Size (px)'
+      placeholder: '16'

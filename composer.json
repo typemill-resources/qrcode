@@ -1,0 +1,8 @@
+{
+    "name": "typemill/qrcode",
+    "description": "QR Code generator for Typemill",
+    "require": {
+        "endroid/qr-code": "^5.0"
+    },
+    "license": "MIT"
+}
