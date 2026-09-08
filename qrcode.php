@@ -13,176 +13,155 @@ use Endroid\QrCode\Writer\PngWriter;
 
 class qrcode extends Plugin
 {
-    private $outputMode = 'markdown'; // 'markdown' or 'html'
-
     public static function getSubscribedEvents()
     {
         return [
-            'onMarkdownLoaded' => 'onMarkdownLoaded',
-            'onTwigLoaded'     => 'onTwigLoaded'
+            'onShortcodeFound' => 'onShortcodeFound',
         ];
     }
 
-    public function onTwigLoaded($event)
+    public function onShortcodeFound($shortcode)
     {
-        $this->addTwigFilter('qrcode', function($content) {
-            $this->outputMode = 'html';
-            return $this->processHtmlContent($content);
-        });
+        $shortcodeArray = $shortcode->getData();
 
-        // CSS Injection for Frontend Alignment
-        // 1. Image Level: For raw images
-        // 2. Figure Level: Using :has() to target the parent figure wrapper inserted by Typemill/Parsedown
-        $css = '
-            /* Right Alignment */
-            img[src*="#align-right"] { display: block !important; margin-left: auto !important; margin-right: 0 !important; }
-            figure:has(img[src*="#align-right"]) { margin-left: auto !important; margin-right: 0 !important; display: table !important; }
+        // Register the shortcode so the editor UI knows about it
+        if (is_array($shortcodeArray) && $shortcodeArray['name'] === 'registershortcode')
+        {
+            $shortcodeArray['data']['qrcode'] = [
+                'data'       => '',
+                'size'       => '300',
+                'margin'     => '10',
+                'color'      => '#000000',
+                'background' => '#ffffff',
+                'alignment'  => 'left',
+                'label'      => '',
+                'logo'       => '',
+            ];
+            $shortcode->setData($shortcodeArray);
+            return;
+        }
 
-            /* Left Alignment */
-            img[src*="#align-left"] { display: block !important; margin-right: auto !important; margin-left: 0 !important; }
-            figure:has(img[src*="#align-left"]) { margin-right: auto !important; margin-left: 0 !important; display: table !important; }
+        if (!is_array($shortcodeArray) || $shortcodeArray['name'] !== 'qrcode')
+        {
+            return;
+        }
 
-            /* Center Alignment */
-            img[src*="#align-center"] { display: block !important; margin: 10px auto !important; }
-            figure:has(img[src*="#align-center"]) { margin-left: auto !important; margin-right: auto !important; }
-        ';
-        $this->addInlineCSS($css);
-    }
+        $shortcode->stopPropagation();
 
-    public function onMarkdownLoaded($plugindata)
-    {
         $this->ensureAutoloader();
 
-        $markdown = $plugindata->getData();
-        $this->outputMode = 'markdown'; 
+        $params   = $shortcodeArray['params'] ?? [];
+        $settings = $this->getPluginSettings();
+        $html     = $this->renderQrCode($params, $settings);
 
-        $regex = '/\[qrcode(.*?)\]/s';
-        $newMarkdown = preg_replace_callback($regex, array($this, 'processShortcode'), $markdown);
-
-        $plugindata->setData($newMarkdown);
+        $shortcode->setData($html);
     }
 
-    private function processHtmlContent($content)
+    private function renderQrCode(array $params, $settings): string
     {
-        $this->ensureAutoloader();
-        $this->outputMode = 'html';
-        $regex = '/\[qrcode(.*?)\]/s';
-        return preg_replace_callback($regex, array($this, 'processShortcode'), $content);
+        $data = $params['data'] ?? '';
+        if (empty($data))
+        {
+            return '<span class="error">QR Code Error: No data provided.</span>';
+        }
+
+        $size      = intval($params['size']       ?? $settings['size']             ?? 300);
+        $margin    = intval($params['margin']     ?? $settings['margin']           ?? 10);
+        $fgHex     = $params['color']      ?? $settings['foreground_color'] ?? '#000000';
+        $bgHex     = $params['background'] ?? $settings['background_color'] ?? '#ffffff';
+        $label     = $params['label']      ?? $settings['label_text']       ?? '';
+        $logoPath  = $params['logo']       ?? $settings['logo_path']        ?? '';
+        $logoWidth = isset($params['logo_width'])  ? intval($params['logo_width'])  : (isset($settings['logo_resize']) ? intval($settings['logo_resize']) : null);
+        $labelSize = isset($settings['label_font_size']) ? intval($settings['label_font_size']) : 16;
+        $alignment = strtolower($params['alignment'] ?? $settings['alignment'] ?? 'left');
+
+        // Build a deterministic cache key from all parameters that affect the image
+        $cacheKey = serialize([$data, $size, $margin, $fgHex, $bgHex, $label, $logoPath, $logoWidth, $labelSize]);
+
+        // generateStaticAsset() writes to /cache/generated/qrcode/ and returns a public URL.
+        // The generator closure is only called when the file does not yet exist.
+        $url = $this->generateStaticAsset(
+            $cacheKey,
+            function() use ($data, $size, $margin, $fgHex, $bgHex, $label, $logoPath, $logoWidth, $labelSize) {
+                return $this->buildPngBytes($data, $size, $margin, $fgHex, $bgHex, $label, $logoPath, $logoWidth, $labelSize);
+            },
+            'png'
+        );
+
+        $alt = !empty($label) ? htmlspecialchars($label) : 'QR Code';
+
+        $alignStyle = match($alignment) {
+            'center' => 'margin-left:auto;margin-right:auto;',
+            'right'  => 'margin-left:auto;margin-right:0;',
+            default  => 'margin-right:auto;margin-left:0;',
+        };
+
+        return '<figure class="qrcode-figure" style="display:table;' . $alignStyle . '">'
+             . '<img src="' . htmlspecialchars($url) . '" alt="' . $alt . '" class="qrcode-plugin" />'
+             . '</figure>';
     }
 
-    private function ensureAutoloader()
+    private function buildPngBytes(string $data, int $size, int $margin, string $fgHex, string $bgHex, string $label, string $logoPath, ?int $logoWidth, int $labelSize): string
     {
-        if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+        $fg = $this->hexToRgb($fgHex);
+        $bg = $this->hexToRgb($bgHex);
+
+        $builder = Builder::create()
+            ->writer(new PngWriter())
+            ->writerOptions([])
+            ->data($data)
+            ->encoding(new Encoding('UTF-8'))
+            ->errorCorrectionLevel(\Endroid\QrCode\ErrorCorrectionLevel::High)
+            ->size($size)
+            ->margin($margin)
+            ->roundBlockSizeMode(RoundBlockSizeMode::Margin)
+            ->foregroundColor(new \Endroid\QrCode\Color\Color($fg['r'], $fg['g'], $fg['b']))
+            ->backgroundColor(new \Endroid\QrCode\Color\Color($bg['r'], $bg['g'], $bg['b']));
+
+        if (!empty($logoPath))
+        {
+            $abs = getcwd() . '/' . ltrim($logoPath, '/');
+            if (file_exists($abs))
+            {
+                $builder->logoPath($abs);
+                if ($logoWidth) { $builder->logoResizeToWidth($logoWidth); }
+                $builder->logoPunchoutBackground(true);
+            }
+        }
+
+        if (!empty($label))
+        {
+            $builder->labelText($label)
+                    ->labelFont(new NotoSans($labelSize))
+                    ->labelAlignment(LabelAlignment::Center);
+        }
+
+        return $builder->build()->getString();
+    }
+
+    private function ensureAutoloader(): void
+    {
+        if (file_exists(__DIR__ . '/vendor/autoload.php'))
+        {
             require_once __DIR__ . '/vendor/autoload.php';
         }
     }
 
-    private function processShortcode($matches)
+    private function hexToRgb(string $hex): array
     {
-        $attributesString = $matches[1];
-        $attributes = $this->parseAttributes($attributesString);
-
-        if (isset($attributes['disabled']) && strtolower($attributes['disabled']) === 'true') {
-            if ($this->outputMode === 'html') {
-                return '<code>' . htmlspecialchars($matches[0]) . '</code>';
-            }
-            return '`' . $matches[0] . '`';
+        $hex = str_replace('#', '', $hex);
+        if (strlen($hex) === 3)
+        {
+            $r = hexdec($hex[0] . $hex[0]);
+            $g = hexdec($hex[1] . $hex[1]);
+            $b = hexdec($hex[2] . $hex[2]);
         }
-
-        if (!isset($attributes['data'])) {
-            return '<span class="error">QR Code Error: No data provided.</span>';
+        else
+        {
+            $r = hexdec(substr($hex, 0, 2));
+            $g = hexdec(substr($hex, 2, 2));
+            $b = hexdec(substr($hex, 4, 2));
         }
-
-        $settings = $this->getPluginSettings('qrcode');
-        
-        $data = $attributes['data'];
-        $size = isset($attributes['size']) ? intval($attributes['size']) : (isset($settings['size']) ? intval($settings['size']) : 300);
-        $margin = isset($attributes['margin']) ? intval($attributes['margin']) : (isset($settings['margin']) ? intval($settings['margin']) : 10);
-        $fgColorHex = isset($attributes['color']) ? $attributes['color'] : (isset($settings['foreground_color']) ? $settings['foreground_color'] : '#000000');
-        $bgColorHex = isset($attributes['background']) ? $attributes['background'] : (isset($settings['background_color']) ? $settings['background_color'] : '#ffffff');
-        $logoPath = isset($attributes['logo']) ? $attributes['logo'] : (isset($settings['logo_path']) ? $settings['logo_path'] : '');
-        $logoResize = isset($attributes['logo_width']) ? intval($attributes['logo_width']) : (isset($settings['logo_resize']) ? intval($settings['logo_resize']) : null);
-        $labelText = isset($attributes['label']) ? $attributes['label'] : (isset($settings['label_text']) ? $settings['label_text'] : '');
-        $labelSize = isset($settings['label_font_size']) ? intval($settings['label_font_size']) : 16;
-        $alignment = isset($attributes['alignment']) ? strtolower($attributes['alignment']) : (isset($settings['alignment']) ? strtolower($settings['alignment']) : 'left');
-
-        $fg = $this->hexToRgb($fgColorHex);
-        $bg = $this->hexToRgb($bgColorHex);
-
-        try {
-            $builder = Builder::create()
-                ->writer(new PngWriter())
-                ->writerOptions([])
-                ->data($data)
-                ->encoding(new Encoding('UTF-8'))
-                ->errorCorrectionLevel(\Endroid\QrCode\ErrorCorrectionLevel::High)
-                ->size($size)
-                ->margin($margin)
-                ->roundBlockSizeMode(RoundBlockSizeMode::Margin)
-                ->foregroundColor(new \Endroid\QrCode\Color\Color($fg['r'], $fg['g'], $fg['b']))
-                ->backgroundColor(new \Endroid\QrCode\Color\Color($bg['r'], $bg['g'], $bg['b']));
-
-            if (!empty($logoPath)) {
-                $absLogoPath =  getcwd() . '/' . ltrim($logoPath, '/');
-                if (file_exists($absLogoPath)) {
-                    $builder->logoPath($absLogoPath);
-                    if ($logoResize) { $builder->logoResizeToWidth($logoResize); }
-                    $builder->logoPunchoutBackground(true);
-                }
-            }
-
-            if (!empty($labelText)) {
-                $builder->labelText($labelText);
-                $builder->labelFont(new NotoSans($labelSize));
-                $builder->labelAlignment(LabelAlignment::Center);
-            }
-
-            $result = $builder->build();
-            $dataUri = $result->getDataUri();
-
-            $alt = !empty($labelText) ? $labelText : 'QR Code';
-
-            if ($this->outputMode === 'html') {
-                $containerStyle = 'display: block; width: 100%;';
-                if ($alignment === 'center') { $containerStyle .= ' text-align: center;'; }
-                elseif ($alignment === 'right') { $containerStyle .= ' text-align: right;'; }
-                else { $containerStyle .= ' text-align: left;'; }
-                $imgStyle = 'display: inline-block; max-width: 100%; height: auto;';
-                return '<div style="' . $containerStyle . '"><img src="' . $dataUri . '" alt="' . $alt . '" class="qrcode-plugin" style="' . $imgStyle . '" /></div>';
-            }
-
-            $hash = '#align-' . $alignment;
-            return '![' . $alt . '](' . $dataUri . $hash . ')';
-
-        } catch (\Exception $e) {
-            return '**QR Code Error: ' . $e->getMessage() . '**';
-        }
-    }
-
-    private function parseAttributes($string)
-    {
-        $attributes = [];
-        $pattern = '/(\w+)="([^"]*)"/';
-        preg_match_all($pattern, $string, $matches, PREG_SET_ORDER);
-        
-        foreach ($matches as $match) {
-            $attributes[$match[1]] = $match[2];
-        }
-        return $attributes;
-    }
-
-    private function hexToRgb($hex)
-    {
-        $hex = str_replace("#", "", $hex);
-        if(strlen($hex) == 3) {
-            $r = hexdec(substr($hex,0,1).substr($hex,0,1));
-            $g = hexdec(substr($hex,1,1).substr($hex,1,1));
-            $b = hexdec(substr($hex,2,1).substr($hex,2,1));
-        } else {
-            $r = hexdec(substr($hex,0,2));
-            $g = hexdec(substr($hex,2,2));
-            $b = hexdec(substr($hex,4,2));
-        }
-        return array("r" => $r, "g" => $g, "b" => $b);
+        return ['r' => $r, 'g' => $g, 'b' => $b];
     }
 }
