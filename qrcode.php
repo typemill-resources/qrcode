@@ -50,7 +50,7 @@ class qrcode extends Plugin
 
         $this->ensureAutoloader();
 
-        $params   = $shortcodeArray['params'] ?? [];
+        $params   = is_array($shortcodeArray['params'] ?? null) ? $shortcodeArray['params'] : [];
         $settings = $this->getPluginSettings();
         $html     = $this->renderQrCode($params, $settings);
 

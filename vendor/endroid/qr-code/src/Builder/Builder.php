@@ -246,7 +246,7 @@ class Builder implements BuilderInterface
      *
      * @return mixed
      */
-    private function buildObject(string $class, string $optionsPrefix = null)
+    private function buildObject(string $class, ?string $optionsPrefix = null)
     {
         /** @var \ReflectionClass<object> $reflectionClass */
         $reflectionClass = new \ReflectionClass($class);

@@ -4,7 +4,7 @@ Generate QR Codes in your content using simple shortcodes. Powered by `endroid/q
 
 ## Usage
 
-Use the shortcode `[:qrcode ...]` in your content. No core modifications required.
+Use the shortcode `[:qrcode ...:]` in your content. No core modifications required.
 
 ### Basic Example
 ```markdown
@@ -43,6 +43,10 @@ The plugin hooks into Typemill's native `onShortcodeFound` event. Generated QR c
 
 ## Version History
 
+*   **v1.2.1** (2026-10-06)
+    *   Fixed handling of native shortcodes without attributes so they display the missing-data error instead of raising a type error.
+    *   Patched implicit nullable parameters in the bundled Endroid PNG-rendering classes for PHP 8.4/8.5 compatibility. These targeted vendor patches must be retained when replacing the bundled dependencies, or superseded by an upstream-compatible release.
+    *   Added standalone regression checks: `php plugins/qrcode/tests/shortcodes.php`.
 *   **v1.2.0** (2026-09-08)
     *   Refactored to use Typemill's native `onShortcodeFound` shortcode system (`[:qrcode ...:]` syntax).
     *   Replaced inline base64 data URIs with static cached PNG files via `generateStaticAsset()`.
