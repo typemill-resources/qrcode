@@ -59,3 +59,7 @@ The plugin hooks into Typemill's native `onShortcodeFound` event. Generated QR c
     *   Added Alignment option (`left`, `center`, `right`).
 *   **v1.0.0** (2026-01-02)
     *   Initial release with `endroid/qr-code` v5.0 support.
+
+---
+© 2026 by M. Klein
+
